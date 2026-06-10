@@ -1,6 +1,8 @@
 import json
 import unittest
+from unittest.mock import AsyncMock, patch
 
+import datanet.client as client_module
 from datanet.client import (
     AnyMessage,
     BinaryMessageMeta,
@@ -19,6 +21,36 @@ class FakeWebSocket:
 
     async def send(self, payload):
         self.sent.append(payload)
+
+
+class FakePostResponse:
+    status = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    async def json(self):
+        return {"token": "jwt-test"}
+
+    async def text(self):
+        return ""
+
+
+class FakeClientSession:
+    calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakePostResponse()
 
 
 class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
@@ -190,3 +222,63 @@ class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_binary_base64_helper(self):
         self.assertEqual(binary_to_base64(b"\x00\x01\x02\xff"), "AAEC/w==")
+
+    async def test_auth_payload_includes_device_metadata(self):
+        FakeClientSession.calls = []
+        client = DataNet(
+            "ak_test",
+            device_id="python-node",
+            client_id="pytest",
+            device_name="Python Test Node",
+        )
+
+        with patch.object(client_module.aiohttp, "ClientSession", FakeClientSession):
+            token = await client._fetch_jwt()
+
+        self.assertEqual(token, "jwt-test")
+        _, kwargs = FakeClientSession.calls[0]
+        self.assertEqual(
+            kwargs["json"],
+            {
+                "apiKey": "ak_test",
+                "deviceId": "python-node",
+                "clientId": "pytest",
+                "deviceName": "Python Test Node",
+            },
+        )
+
+    async def test_heartbeat_sends_hb_envelope(self):
+        client = DataNet("ak_test")
+        ws = FakeWebSocket()
+        client._ws = ws
+        original_interval = client_module._HEARTBEAT_INTERVAL
+        client_module._HEARTBEAT_INTERVAL = 0
+
+        try:
+            task = __import__("asyncio").create_task(client._heartbeat_loop())
+            while not ws.sent:
+                await __import__("asyncio").sleep(0)
+            ws.closed = True
+            await task
+        finally:
+            client_module._HEARTBEAT_INTERVAL = original_interval
+
+        self.assertEqual(json.loads(ws.sent[0]), {"op": "hb"})
+
+    async def test_resubscribe_replays_json_binary_and_any_channels(self):
+        client = DataNet("ak_test")
+        client._send_sub = AsyncMock()
+
+        async def handler(*_):
+            return None
+
+        client.subscribe("demo.json", handler)
+        client.subscribe_binary("demo.binary", handler)
+        client.subscribe_any("demo.any", handler)
+
+        await client._resubscribe_all()
+
+        client._send_sub.assert_any_await("demo.json")
+        client._send_sub.assert_any_await("demo.binary")
+        client._send_sub.assert_any_await("demo.any")
+        self.assertEqual(client._send_sub.await_count, 3)

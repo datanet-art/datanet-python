@@ -219,6 +219,12 @@ class DataNet:
     ----------
     api_key:
         Your DataNet API key (``ak_...``).
+    device_id:
+        Stable device identifier used for presence/history metadata.
+    client_id:
+        Optional client/app identifier for connection tracking.
+    device_name:
+        Optional device display name for dashboards/admin tools.
     api_url:
         Base URL of the HTTP REST API.
     ws_url:
@@ -256,6 +262,7 @@ class DataNet:
         api_key: str,
         device_id: str | None = None,
         client_id: str | None = None,
+        device_name: str | None = None,
         api_url: str = "https://api.datanet.art",
         ws_url: str = "wss://ws.datanet.art",
         max_reconnect_attempts: int = 5,
@@ -263,6 +270,7 @@ class DataNet:
         self._api_key = api_key
         self._device_id = device_id
         self._client_id = client_id
+        self._device_name = device_name
         self._api_url = api_url.rstrip("/")
         self._ws_url = ws_url.rstrip("/")
         self._max_reconnect_attempts = max_reconnect_attempts
@@ -751,6 +759,8 @@ class DataNet:
             payload["deviceId"] = self._device_id
         if self._client_id:
             payload["clientId"] = self._client_id
+        if self._device_name:
+            payload["deviceName"] = self._device_name
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 url,

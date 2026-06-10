@@ -80,13 +80,14 @@ except KeyboardInterrupt:
 
 ## API reference
 
-### `DataNet(api_key, device_id=None, client_id=None, api_url=..., ws_url=..., max_reconnect_attempts=5)`
+### `DataNet(api_key, device_id=None, client_id=None, device_name=None, api_url=..., ws_url=..., max_reconnect_attempts=5)`
 
 | Parameter | Default | Description |
 |---|---|---|
 | `api_key` | — | Your DataNet API key (`ak_...`) |
 | `device_id` | — | Stable device identifier for presence/history |
 | `client_id` | — | Optional app/client identifier |
+| `device_name` | — | Optional display name for dashboards/admin tools |
 | `api_url` | `https://api.datanet.art` | REST API base URL |
 | `ws_url` | `wss://ws.datanet.art` | WebSocket base URL |
 | `max_reconnect_attempts` | `5` | Max consecutive reconnects; `0` = unlimited |
