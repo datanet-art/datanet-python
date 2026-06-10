@@ -105,6 +105,8 @@ The Python SDK supports the same protocol classes as the JavaScript SDK:
 
 Binary messages include metadata with the packet: `channel`, `from_`,
 `timestamp`, `content_type`, `bytes`, and optional custom `metadata`.
+When connected to an older gateway that still emits raw binary WebSocket frames,
+the SDK falls back safely and marks those messages with `metadata={"raw": True}`.
 
 ```python
 from datanet import DataNet, build_dmx_frame
@@ -134,7 +136,16 @@ dn = DataNet(
 )
 ```
 
-The bundled examples also support environment overrides:
+The bundled examples automatically load configuration from a repo-level `.env`
+file if present. Copy the template once, add your real key/channel values, and
+keep `.env` local:
+
+```bash
+cp .env.example .env
+```
+
+The examples also support shell environment overrides, which take precedence
+over values in `.env`:
 
 ```bash
 DATANET_API_KEY='ak_local_key_here' \

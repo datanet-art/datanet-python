@@ -34,7 +34,10 @@ import sys
 # Allow running this file directly without installing the package.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from _env import load_example_env
 from datanet import DataNet
+
+load_example_env()
 
 API_KEY = os.environ.get("DATANET_API_KEY", "ak_dev_12345")
 CHANNEL = os.environ.get("DATANET_CHANNEL", "demo.processing.p5")

@@ -801,7 +801,14 @@ class DataNet:
         try:
             async for raw in self._ws:
                 if isinstance(raw, bytes):
-                    raw = raw.decode("utf-8")
+                    try:
+                        text = raw.decode("utf-8")
+                        json.loads(text)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        await self._handle_raw_binary(raw)
+                    else:
+                        await self._handle_message(text)
+                    continue
                 await self._handle_message(raw)
         except ConnectionClosed as exc:
             logger.info("DataNet: connection closed: %s", exc)
@@ -922,6 +929,61 @@ class DataNet:
                         "DataNet: any handler error on channel %s: %s", channel, exc
                     )
                     await self._emit("error", exc)
+
+    async def _handle_raw_binary(self, data: bytes) -> None:
+        """Dispatch legacy/raw WebSocket binary frames to binary subscribers.
+
+        Raw binary frames do not include a channel name, sender, timestamp, or
+        content type. Prefer the JSON binary envelope when possible; this
+        fallback keeps subscribers compatible with gateway paths that still
+        fan out raw bytes.
+        """
+
+        channels = set(self._binary_subscribers) | set(self._any_subscribers)
+        if not channels:
+            logger.debug("DataNet: unhandled raw binary message")
+            return
+
+        timestamp = int(time.time() * 1000)
+        for channel in channels:
+            meta = BinaryMessageMeta(
+                channel=channel,
+                from_="",
+                timestamp=timestamp,
+                content_type=(
+                    self._binary_content_types.get(channel)
+                    or "application/octet-stream"
+                ),
+                bytes=len(data),
+                metadata={"raw": True},
+            )
+
+            handlers = list(self._binary_subscribers.get(channel, []))
+            any_handlers = list(self._any_subscribers.get(channel, []))
+
+            for handler in handlers:
+                try:
+                    await handler(data, meta)
+                except Exception as exc:
+                    logger.exception(
+                        "DataNet: raw binary handler error on channel %s: %s",
+                        channel,
+                        exc,
+                    )
+                    await self._emit("error", exc)
+
+            if any_handlers:
+                message = AnyMessage(kind="binary", data=data, meta=meta)
+                for handler in any_handlers:
+                    try:
+                        await handler(message)
+                    except Exception as exc:
+                        logger.exception(
+                            "DataNet: raw binary any handler error on channel %s: %s",
+                            channel,
+                            exc,
+                        )
+                        await self._emit("error", exc)
 
     # ── Internal: heartbeat ───────────────────────────────────────────────────
 

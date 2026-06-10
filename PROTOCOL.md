@@ -112,3 +112,15 @@ BinaryMessageMeta(
 Known binary content types include `binary/dmx`, `binary/dmx-delta`,
 `binary/artnet`, `binary/vecf32`, `binary/ble-adv-batch`,
 `binary/interaction-batch`, and `application/octet-stream`.
+
+## Raw Binary Compatibility
+
+The preferred server fanout is always the metadata-bearing JSON envelope above.
+Some older gateway paths may still deliver raw WebSocket binary frames. Raw
+frames do not carry channel, sender, timestamp, content type, or custom
+metadata, so SDKs should treat them as a compatibility fallback only.
+
+The Python SDK handles this by first attempting to decode binary WebSocket
+frames as UTF-8 JSON envelopes. If decoding or JSON parsing fails, it dispatches
+the bytes to registered binary subscribers and marks the metadata as
+`{"raw": True}`.

@@ -32,7 +32,10 @@ import time
 # Allow running this file directly without installing the package.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from _env import load_example_env
 from datanet import DataNet, MessageMeta
+
+load_example_env()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration — override via environment variables

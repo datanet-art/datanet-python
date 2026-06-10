@@ -14,7 +14,10 @@ import sys
 # Allow running this file directly without installing the package.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from _env import load_example_env
 from datanet import DataNet, build_dmx_frame
+
+load_example_env()
 
 API_KEY = os.environ.get("DATANET_API_KEY", "ak_your_api_key_here")
 CHANNEL = os.environ.get(

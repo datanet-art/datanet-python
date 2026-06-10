@@ -18,9 +18,18 @@ class FakeWebSocket:
     def __init__(self):
         self.closed = False
         self.sent = []
+        self.incoming = []
 
     async def send(self, payload):
         self.sent.append(payload)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.incoming:
+            return self.incoming.pop(0)
+        raise StopAsyncIteration
 
 
 class FakePostResponse:
@@ -147,6 +156,84 @@ class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(any_seen[0], AnyMessage)
         self.assertEqual(any_seen[0].kind, "binary")
         self.assertEqual(any_seen[0].data, b"\x01\x02\x03")
+
+    async def test_raw_binary_frames_dispatch_to_binary_handlers(self):
+        client = DataNet("ak_test")
+        binary_seen = []
+        any_seen = []
+
+        async def on_binary(data, meta):
+            binary_seen.append((data, meta))
+
+        async def on_any(message):
+            any_seen.append(message)
+
+        client.subscribe_binary("project.demo.dmx", on_binary, content_type="binary/dmx")
+        client.subscribe_any("project.demo.dmx", on_any)
+
+        await client._handle_raw_binary(b"\xff\x50\x14")
+
+        self.assertEqual(len(binary_seen), 1)
+        data, meta = binary_seen[0]
+        self.assertEqual(data, b"\xff\x50\x14")
+        self.assertIsInstance(meta, BinaryMessageMeta)
+        self.assertEqual(meta.channel, "project.demo.dmx")
+        self.assertEqual(meta.content_type, "binary/dmx")
+        self.assertEqual(meta.bytes, 3)
+        self.assertEqual(meta.metadata, {"raw": True})
+
+        self.assertEqual(len(any_seen), 1)
+        self.assertEqual(any_seen[0].kind, "binary")
+        self.assertEqual(any_seen[0].data, b"\xff\x50\x14")
+
+    async def test_utf8_raw_binary_frames_fall_back_when_not_json(self):
+        client = DataNet("ak_test")
+        seen = []
+
+        async def on_binary(data, meta):
+            seen.append((data, meta))
+
+        client.subscribe_binary("project.demo.raw", on_binary)
+        ws = FakeWebSocket()
+        ws.incoming.append(b"hello-binary")
+        client._ws = ws
+
+        await client._recv_loop()
+
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][0], b"hello-binary")
+        self.assertEqual(seen[0][1].metadata, {"raw": True})
+
+    async def test_binary_websocket_json_frames_are_decoded_before_raw_fallback(self):
+        client = DataNet("ak_test")
+        ws = FakeWebSocket()
+        ws.incoming.append(
+            json.dumps(
+                {
+                    "op": "pub",
+                    "ch": "project.demo.dmx",
+                    "bin": True,
+                    "b64": "AQID",
+                    "ct": "binary/dmx",
+                    "bytes": 3,
+                    "meta": {"universe": 1},
+                }
+            ).encode("utf-8")
+        )
+        client._ws = ws
+        seen = []
+
+        async def on_binary(data, meta):
+            seen.append((data, meta))
+
+        client.subscribe_binary("project.demo.dmx", on_binary, content_type="binary/dmx")
+
+        await client._recv_loop()
+
+        self.assertEqual(len(seen), 1)
+        data, meta = seen[0]
+        self.assertEqual(data, b"\x01\x02\x03")
+        self.assertEqual(meta.metadata, {"universe": 1})
 
     async def test_json_messages_dispatch_to_any_handlers(self):
         client = DataNet("ak_test")
