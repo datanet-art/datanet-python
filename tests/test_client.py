@@ -369,3 +369,138 @@ class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
         client._send_sub.assert_any_await("demo.binary")
         client._send_sub.assert_any_await("demo.any")
         self.assertEqual(client._send_sub.await_count, 3)
+
+
+class FakeHandshakeWebSocket:
+    """Minimal ws exposing recv() for handshake tests."""
+
+    def __init__(self, frames):
+        self.frames = list(frames)
+
+    async def recv(self):
+        if self.frames:
+            return self.frames.pop(0)
+        raise AssertionError("handshake consumed all frames without resolving")
+
+
+class GatewayLimitErrorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_handshake_succeeds_on_connected_message(self):
+        client = DataNet("ak_test")
+        ws = FakeHandshakeWebSocket([json.dumps({"type": "connected", "userId": "dev-1"})])
+        await client._await_handshake(ws)  # must not raise
+
+    async def test_handshake_raises_structured_device_limit_error(self):
+        client = DataNet("ak_test")
+        client._should_run = True
+        errors = []
+
+        async def on_error(exc):
+            errors.append(exc)
+
+        client.on("error", on_error)
+        ws = FakeHandshakeWebSocket(
+            [json.dumps({"type": "error", "error": "device_limit_reached", "limit": 25})]
+        )
+
+        with self.assertRaises(client_module.DataNetError) as ctx:
+            await client._await_handshake(ws)
+
+        self.assertEqual(ctx.exception.code, "device_limit_reached")
+        self.assertEqual(ctx.exception.limit, 25)
+        # Fatal: the reconnect loop must stop instead of hammering the gateway.
+        self.assertFalse(client._should_run)
+        self.assertIs(client._fatal_error, ctx.exception)
+        self.assertEqual(len(errors), 1)
+
+    async def test_handshake_skips_binary_noise_before_connected(self):
+        client = DataNet("ak_test")
+        ws = FakeHandshakeWebSocket(
+            [b"\xff\xfe", "not json", json.dumps({"type": "connected"})]
+        )
+        await client._await_handshake(ws)  # must not raise
+
+    async def test_rate_limited_error_carries_retry_ms_and_scope(self):
+        client = DataNet("ak_test")
+        errors = []
+
+        async def on_error(exc):
+            errors.append(exc)
+
+        client.on("error", on_error)
+        await client._handle_message(
+            json.dumps(
+                {
+                    "type": "error",
+                    "error": "rate_limited",
+                    "retry_ms": 250,
+                    "scope": "connection",
+                    "channel": "project.p1.sensor",
+                }
+            )
+        )
+
+        self.assertEqual(len(errors), 1)
+        error = errors[0]
+        self.assertEqual(error.code, "rate_limited")
+        self.assertEqual(error.retry_ms, 250)
+        self.assertEqual(error.scope, "connection")
+        self.assertEqual(error.channel, "project.p1.sensor")
+        # Rate limiting is transient — must not stop the client.
+        self.assertIsNone(client._fatal_error)
+
+    async def test_topic_limit_reached_error_carries_plan_limit(self):
+        client = DataNet("ak_test")
+        errors = []
+
+        async def on_error(exc):
+            errors.append(exc)
+
+        client.on("error", on_error)
+        await client._handle_message(
+            json.dumps(
+                {
+                    "type": "error",
+                    "error": "topic_limit_reached",
+                    "limit": 240,
+                    "channel": "project.p1.one-too-many",
+                    "operation": "sub",
+                }
+            )
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0].code, "topic_limit_reached")
+        self.assertEqual(errors[0].limit, 240)
+        self.assertEqual(errors[0].channel, "project.p1.one-too-many")
+        self.assertIsNone(client._fatal_error)
+
+    async def test_device_limit_error_mid_session_stops_reconnect_loop(self):
+        client = DataNet("ak_test")
+        client._should_run = True
+        errors = []
+
+        async def on_error(exc):
+            errors.append(exc)
+
+        client.on("error", on_error)
+        await client._handle_message(
+            json.dumps({"type": "error", "error": "device_limit_reached", "limit": 5})
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0].limit, 5)
+        self.assertFalse(client._should_run)
+        self.assertIsNotNone(client._fatal_error)
+
+    async def test_wait_for_connection_raises_fatal_error_immediately(self):
+        client = DataNet("ak_test")
+        client._fatal_error = client_module.DataNetError(
+            "DataNet: device_limit_reached",
+            code="device_limit_reached",
+            limit=25,
+        )
+
+        with self.assertRaises(client_module.DataNetError) as ctx:
+            await client._wait_for_connection(timeout=5)
+
+        self.assertEqual(ctx.exception.code, "device_limit_reached")
