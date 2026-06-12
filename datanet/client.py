@@ -119,6 +119,7 @@ class DataNetError(RuntimeError):
         retry_ms: int | None = None,
         scope: str | None = None,
         status: int | None = None,
+        limit: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -126,6 +127,28 @@ class DataNetError(RuntimeError):
         self.retry_ms = retry_ms
         self.scope = scope
         self.status = status
+        #: Plan limit that was hit (device_limit_reached, topic_limit_reached)
+        self.limit = limit
+
+
+#: Gateway errors after which the server closes the socket and a reconnect
+#: with the same credentials can only fail again — do not retry these.
+_FATAL_GATEWAY_ERRORS = frozenset({"device_limit_reached"})
+
+
+def _gateway_error(envelope: dict[str, Any]) -> DataNetError:
+    """Build a structured DataNetError from a gateway error envelope."""
+    code = str(envelope.get("code") or envelope.get("error") or "gateway_error")
+    retry_ms = envelope.get("retry_ms")
+    limit = envelope.get("limit")
+    return DataNetError(
+        f"DataNet: {envelope.get('error')}",
+        code=code,
+        channel=envelope.get("channel") or envelope.get("ch"),
+        retry_ms=retry_ms if isinstance(retry_ms, int) else None,
+        scope=envelope.get("scope"),
+        limit=limit if isinstance(limit, int) else None,
+    )
 
 
 def _to_bytes(data: BinaryData) -> bytes:
@@ -299,6 +322,9 @@ class DataNet:
         # Reconnect bookkeeping
         self._reconnect_attempt = 0
         self._should_run = False
+        # Set when the gateway rejects us with a non-retryable error
+        # (e.g. device_limit_reached); stops the reconnect loop.
+        self._fatal_error: DataNetError | None = None
 
         # For sync usage
         self._thread: threading.Thread | None = None
@@ -336,6 +362,7 @@ class DataNet:
         """
         self._loop = asyncio.get_running_loop()
         self._should_run = True
+        self._fatal_error = None
         self._run_task = asyncio.create_task(self._run_loop(), name="datanet-run")
 
         # Wait until actually connected (or the task fails)
@@ -626,6 +653,7 @@ class DataNet:
             If the background thread fails to start.
         """
         self._connected_event.clear()
+        self._fatal_error = None
 
         def _thread_target() -> None:
             loop = asyncio.new_event_loop()
@@ -653,10 +681,15 @@ class DataNet:
         )
         self._thread.start()
 
-        if not self._connected_event.wait(timeout=timeout):
-            raise TimeoutError(
-                f"DataNet: could not connect within {timeout}s."
-            )
+        deadline = time.monotonic() + timeout
+        while not self._connected_event.is_set():
+            if self._fatal_error is not None:
+                raise self._fatal_error
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"DataNet: could not connect within {timeout}s."
+                )
+            self._connected_event.wait(timeout=0.05)
 
     # ── Async context manager ─────────────────────────────────────────────────
 
@@ -681,7 +714,9 @@ class DataNet:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                await self._emit("error", exc)
+                # Fatal gateway errors were already emitted by the handshake.
+                if exc is not self._fatal_error:
+                    await self._emit("error", exc)
                 logger.warning("DataNet connection error: %s", exc)
 
             if not self._should_run:
@@ -722,6 +757,10 @@ class DataNet:
             ping_interval=None,  # We manage our own heartbeats
         ) as ws:
             self._ws = ws
+            # The gateway accepts the socket and then either sends
+            # {"type": "connected"} or an error (e.g. device_limit_reached)
+            # before closing. Don't report success until we know which.
+            await self._await_handshake(ws)
             logger.info("DataNet: connected.")
             # Signal sync callers that we're up
             self._connected_event.set()
@@ -747,6 +786,38 @@ class DataNet:
             self._ws = None
             self._active_subs.clear()
             await self._emit("disconnect")
+
+    async def _await_handshake(self, ws: Any) -> None:
+        """Wait for the gateway's post-upgrade handshake message.
+
+        The gateway sends ``{"type": "connected"}`` once the connection is
+        registered, or ``{"type": "error"}`` (e.g. ``device_limit_reached``)
+        followed by a close. Raising here keeps :meth:`connect` honest — the
+        caller only sees success after the gateway accepted us.
+        """
+        while True:
+            raw = await asyncio.wait_for(ws.recv(), timeout=10)
+            if isinstance(raw, bytes):
+                try:
+                    raw = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+            try:
+                envelope = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(envelope, dict):
+                continue
+            if envelope.get("type") == "connected":
+                return
+            if envelope.get("type") == "error" and envelope.get("error"):
+                error = _gateway_error(envelope)
+                if error.code in _FATAL_GATEWAY_ERRORS:
+                    self._fatal_error = error
+                    self._should_run = False
+                await self._emit("error", error)
+                raise error
+            # Anything else pre-handshake is unexpected; keep waiting.
 
     # ── Internal: JWT ─────────────────────────────────────────────────────────
 
@@ -823,13 +894,12 @@ class DataNet:
 
         op: str = envelope.get("op", "")
         if envelope.get("type") == "error" and envelope.get("error"):
-            error = DataNetError(
-                f"DataNet: {envelope.get('error')}",
-                code=str(envelope.get("code") or envelope.get("error")),
-                channel=envelope.get("channel") or envelope.get("ch"),
-                retry_ms=envelope.get("retry_ms"),
-                scope=envelope.get("scope"),
-            )
+            error = _gateway_error(envelope)
+            if error.code in _FATAL_GATEWAY_ERRORS:
+                # The gateway will close the socket; reconnecting with the
+                # same credentials can only fail again.
+                self._fatal_error = error
+                self._should_run = False
             await self._emit("error", error)
             return
 
@@ -1087,10 +1157,14 @@ class DataNet:
         """Await until the WebSocket is open or the run task fails."""
         deadline = time.monotonic() + timeout
         while not self.connected:
+            if self._fatal_error is not None:
+                raise self._fatal_error
             if self._run_task and self._run_task.done():
                 exc = self._run_task.exception()
                 if exc:
                     raise exc
+                if self._fatal_error is not None:
+                    raise self._fatal_error
                 return
             if time.monotonic() > deadline:
                 raise TimeoutError(f"DataNet: did not connect within {timeout}s.")
