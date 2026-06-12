@@ -43,6 +43,17 @@ Documentation = "https://datanet.art/docs"
 [tool.hatch.build.targets.wheel]
 packages = ["datanet"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/datanet",
+    "/examples",
+    "/tests",
+    "/LICENSE",
+    "/README.md",
+    "/PROTOCOL.md",
+    "/pyproject.toml",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 

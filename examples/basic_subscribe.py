@@ -140,7 +140,7 @@ def run_sync() -> None:
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nShutting down…")
-        dn.disconnect()
+        dn.disconnect_sync()
         print("Goodbye.")
 
 

@@ -75,7 +75,7 @@ try:
     while True:
         time.sleep(1)
 except KeyboardInterrupt:
-    dn.disconnect()
+    dn.disconnect_sync()
 ```
 
 ## API reference
@@ -176,6 +176,7 @@ python examples/publish_p5.py
 | `await connect()` | Fetch JWT and open WebSocket |
 | `connect_sync(timeout=10)` | Same, but runs in a background thread |
 | `await disconnect()` | Close connection and stop run loop |
+| `disconnect_sync(timeout=10)` | Close a sync/background-thread connection |
 | `subscribe(channel, handler)` | Register an async message handler |
 | `unsubscribe(channel, handler=None)` | Remove handler (or all) from channel |
 | `await publish(channel, data, content_type=None, metadata=None)` | Send JSON, or auto-detect bytes-like binary data |

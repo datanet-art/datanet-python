@@ -691,6 +691,26 @@ class DataNet:
                 )
             self._connected_event.wait(timeout=0.05)
 
+    def disconnect_sync(self, timeout: float = 10.0) -> None:
+        """Disconnect from sync/background-thread code and wait for cleanup.
+
+        This is the sync counterpart to :meth:`disconnect` for programs that
+        used :meth:`connect_sync`. Async applications should prefer
+        ``await disconnect()`` or the async context manager.
+        """
+        if self._loop and self._loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(self.disconnect(), self._loop)
+            future.result(timeout=timeout)
+        else:
+            asyncio.run(self.disconnect())
+
+        if (
+            self._thread
+            and self._thread.is_alive()
+            and threading.current_thread() is not self._thread
+        ):
+            self._thread.join(timeout=timeout)
+
     # ── Async context manager ─────────────────────────────────────────────────
 
     async def __aenter__(self) -> "DataNet":
