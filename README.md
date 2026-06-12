@@ -290,15 +290,9 @@ python -m pip install -e .[dev]
 python -m pytest
 ```
 
-## License
-
-MIT
-
 ## About
 
-DataNet is developed and supported by [Studio Jordan Shaw](https://www.jordanshaw.com),
-a creative technology studio building tools for realtime, networked, and
-physical-digital work.
+DataNet is developed and supported by [Studio Jordan Shaw](https://www.jordanshaw.com), a creative technology studio building tools for realtime, networked, and physical-digital work.
 
 - DataNet: [datanet.art](https://datanet.art)
 - Studio: [jordanshaw.com](https://www.jordanshaw.com)
@@ -306,3 +300,7 @@ physical-digital work.
 - GitHub: [datanet-art](https://github.com/datanet-art)
 - Source: [datanet-python](https://github.com/datanet-art/datanet-python)
 - Examples: [datanet-examples](https://github.com/datanet-art/datanet-examples)
+
+## License
+
+MIT
