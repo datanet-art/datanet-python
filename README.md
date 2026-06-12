@@ -155,6 +155,28 @@ DATANET_WS_URL='ws://localhost:8080' \
 python examples/publish.py
 ```
 
+### Binary examples
+
+The JSON examples use `DATANET_CHANNEL`.
+
+The binary DMX examples use `DATANET_BINARY_CHANNEL` first, then fall back to
+`DATANET_CHANNEL` if no binary channel is set. Use the same binary channel for
+both publisher and subscriber:
+
+```bash
+DATANET_API_KEY='ak_local_key_here' \
+DATANET_BINARY_CHANNEL='project.abc.lighting.dmx' \
+python examples/binary_dmx_subscribe.py
+```
+
+In another terminal:
+
+```bash
+DATANET_API_KEY='ak_local_key_here' \
+DATANET_BINARY_CHANNEL='project.abc.lighting.dmx' \
+python examples/binary_dmx_publish.py
+```
+
 To drive the browser p5 visualizer demo directly with pixel coordinates:
 
 ```bash

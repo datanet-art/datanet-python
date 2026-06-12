@@ -33,12 +33,13 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "aioresponses>=0.7",
+    "ruff>=0.8",
 ]
 
 [project.urls]
 Homepage = "https://datanet.art"
-Repository = "https://github.com/datanet-art/datanet-python"
-Documentation = "https://datanet.art/docs"
+Documentation = "https://datanet.art/docs/python"
+Source = "https://github.com/datanet-art/datanet-python"
 
 [tool.hatch.build.targets.wheel]
 packages = ["datanet"]
@@ -49,6 +50,8 @@ include = [
     "/examples",
     "/tests",
     "/LICENSE",
+    "/CHANGELOG.md",
+    "/.env.example",
     "/README.md",
     "/PROTOCOL.md",
     "/pyproject.toml",
@@ -62,4 +65,5 @@ target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F"]
+ignore = ["E501"]
