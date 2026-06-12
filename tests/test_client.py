@@ -111,6 +111,13 @@ class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(seen, [])
 
+    def test_disconnect_sync_without_active_connection_is_safe(self):
+        client = DataNet("ak_test")
+
+        client.disconnect_sync()
+
+        self.assertFalse(client.connected)
+
     async def test_binary_messages_dispatch_to_binary_and_any_handlers(self):
         client = DataNet("ak_test")
         binary_seen = []

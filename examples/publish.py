@@ -215,7 +215,7 @@ def run_sync() -> None:
     except KeyboardInterrupt:
         print("\nShutting down…")
     finally:
-        dn.disconnect()
+        dn.disconnect_sync()
         print(f"Published {published} readings. Goodbye.")
 
 

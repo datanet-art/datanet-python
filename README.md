@@ -75,7 +75,7 @@ try:
     while True:
         time.sleep(1)
 except KeyboardInterrupt:
-    dn.disconnect()
+    dn.disconnect_sync()
 ```
 
 ## API reference
@@ -155,6 +155,28 @@ DATANET_WS_URL='ws://localhost:8080' \
 python examples/publish.py
 ```
 
+### Binary examples
+
+The JSON examples use `DATANET_CHANNEL`.
+
+The binary DMX examples use `DATANET_BINARY_CHANNEL` first, then fall back to
+`DATANET_CHANNEL` if no binary channel is set. Use the same binary channel for
+both publisher and subscriber:
+
+```bash
+DATANET_API_KEY='ak_local_key_here' \
+DATANET_BINARY_CHANNEL='project.abc.lighting.dmx' \
+python examples/binary_dmx_subscribe.py
+```
+
+In another terminal:
+
+```bash
+DATANET_API_KEY='ak_local_key_here' \
+DATANET_BINARY_CHANNEL='project.abc.lighting.dmx' \
+python examples/binary_dmx_publish.py
+```
+
 To drive the browser p5 visualizer demo directly with pixel coordinates:
 
 ```bash
@@ -176,6 +198,7 @@ python examples/publish_p5.py
 | `await connect()` | Fetch JWT and open WebSocket |
 | `connect_sync(timeout=10)` | Same, but runs in a background thread |
 | `await disconnect()` | Close connection and stop run loop |
+| `disconnect_sync(timeout=10)` | Close a sync/background-thread connection |
 | `subscribe(channel, handler)` | Register an async message handler |
 | `unsubscribe(channel, handler=None)` | Remove handler (or all) from channel |
 | `await publish(channel, data, content_type=None, metadata=None)` | Send JSON, or auto-detect bytes-like binary data |

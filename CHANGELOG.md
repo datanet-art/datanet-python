@@ -1,0 +1,13 @@
+# Changelog
+
+## 0.1.0 - 2026-06-12
+
+Initial public release.
+
+- Added async DataNet WebSocket client.
+- Added sync/background-thread helpers.
+- Added JSON publish and subscribe support.
+- Added binary publish and subscribe support.
+- Added DMX and Art-Net helper utilities.
+- Added runnable examples for JSON, p5-style coordinates, and binary DMX.
+- Added pytest coverage for client behavior, errors, and binary helpers.
