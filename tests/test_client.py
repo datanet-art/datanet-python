@@ -1,3 +1,4 @@
+import base64
 import json
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -62,6 +63,36 @@ class FakeClientSession:
         return FakePostResponse()
 
 
+class FakePresenceResponse:
+    status = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    async def json(self):
+        return {"occupancy": 2, "members": ["one", "two"]}
+
+    async def text(self):
+        return ""
+
+
+class FakePresenceSession:
+    calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakePresenceResponse()
+
+
 class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_pub_messages_dispatch_to_matching_handlers(self):
         client = DataNet("ak_test")
@@ -117,6 +148,27 @@ class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
         client.disconnect_sync()
 
         self.assertFalse(client.connected)
+
+    async def test_get_presence_uses_current_jwt(self):
+        encoded = base64.urlsafe_b64encode(json.dumps({"pid": "project-id"}).encode()).decode().rstrip("=")
+        client = DataNet("ak_test", api_url="https://api.example.test")
+        client._jwt = f"header.{encoded}.signature"
+        FakePresenceSession.calls = []
+
+        with patch.object(client_module.aiohttp, "ClientSession", FakePresenceSession):
+            result = await client.get_presence("project.project-id.demo")
+
+        self.assertEqual(result, {"occupancy": 2, "members": ["one", "two"]})
+        url, kwargs = FakePresenceSession.calls[0]
+        self.assertEqual(url, "https://api.example.test/presence")
+        self.assertEqual(kwargs["params"], {"channel": "project.project-id.demo", "projectId": "project-id"})
+        self.assertEqual(kwargs["headers"]["Authorization"], f"Bearer {client._jwt}")
+
+    async def test_get_presence_requires_connection(self):
+        client = DataNet("ak_test")
+
+        with self.assertRaisesRegex(RuntimeError, "connect before"):
+            await client.get_presence("project.demo.room")
 
     async def test_binary_messages_dispatch_to_binary_and_any_handlers(self):
         client = DataNet("ak_test")

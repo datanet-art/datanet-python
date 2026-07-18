@@ -13,6 +13,7 @@ from datanet.client import (
     DataNet,
     DataNetError,
     MessageMeta,
+    PresenceResult,
     base64_to_binary,
     binary_to_base64,
     build_art_dmx_packet,
@@ -25,9 +26,10 @@ __all__ = [
     "DataNet",
     "DataNetError",
     "MessageMeta",
+    "PresenceResult",
     "base64_to_binary",
     "binary_to_base64",
     "build_art_dmx_packet",
     "build_dmx_frame",
 ]
-__version__ = "0.1.0"
+__version__ = "0.1.1"
