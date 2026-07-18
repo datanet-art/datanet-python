@@ -199,6 +199,7 @@ python examples/publish_p5.py
 | `connect_sync(timeout=10)` | Same, but runs in a background thread |
 | `await disconnect()` | Close connection and stop run loop |
 | `disconnect_sync(timeout=10)` | Close a sync/background-thread connection |
+| `await get_presence(channel)` | Return authoritative `{occupancy, members}` presence data |
 | `subscribe(channel, handler)` | Register an async message handler |
 | `unsubscribe(channel, handler=None)` | Remove handler (or all) from channel |
 | `await publish(channel, data, content_type=None, metadata=None)` | Send JSON, or auto-detect bytes-like binary data |
@@ -208,6 +209,14 @@ python examples/publish_p5.py
 | `subscribe_binary(channel, handler, content_type=None)` | Register an async binary handler |
 | `subscribe_any(channel, handler)` | Register an async handler for JSON and binary messages |
 | `on(event, handler)` | Register an event handler (decorator or direct) |
+
+`get_presence()` reuses the JWT from `connect()`, requires the API key's
+`presence` scope, and should be called occasionally or on a throttled timer:
+
+```python
+presence = await dn.get_presence("project.abc.demo")
+print(presence["occupancy"], presence["members"])
+```
 
 ### Events
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 - 2026-07-17
+
+- Added `get_presence(channel)` for authoritative occupancy and member lookups.
+
 ## 0.1.0 - 2026-06-12
 
 Initial public release.

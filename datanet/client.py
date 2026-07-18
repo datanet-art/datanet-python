@@ -38,7 +38,7 @@ import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, TypedDict
 
 import aiohttp
 import websockets
@@ -51,6 +51,7 @@ __all__ = [
     "DataNet",
     "DataNetError",
     "MessageMeta",
+    "PresenceResult",
     "base64_to_binary",
     "binary_to_base64",
     "build_art_dmx_packet",
@@ -105,6 +106,13 @@ class AnyMessage:
     kind: str
     data: Any
     meta: MessageMeta | BinaryMessageMeta
+
+
+class PresenceResult(TypedDict):
+    """Authoritative server-side occupancy for a channel."""
+
+    occupancy: int
+    members: list[str]
 
 
 class DataNetError(RuntimeError):
@@ -379,6 +387,76 @@ class DataNet:
                 pass
             self._ws = None
         await self._emit("disconnect")
+
+    async def get_presence(self, channel: str) -> PresenceResult:
+        """Return authoritative occupancy and member IDs for *channel*.
+
+        The client must be connected first so this request can reuse its
+        short-lived JWT. The API key must include the ``presence`` scope.
+        """
+        if not self._jwt:
+            raise DataNetError(
+                "DataNet: connect before requesting presence",
+                code="not_connected",
+            )
+
+        params = {"channel": channel}
+        project_id = self._jwt_project_id()
+        if project_id:
+            params["projectId"] = project_id
+
+        url = f"{self._api_url}/presence"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    params=params,
+                    headers={"Authorization": f"Bearer {self._jwt}"},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status != 200:
+                        text = await resp.text()
+                        detail = text
+                        try:
+                            body = json.loads(text)
+                            if isinstance(body, dict):
+                                detail = str(body.get("error") or text)
+                        except json.JSONDecodeError:
+                            pass
+                        raise DataNetError(
+                            f"DataNet presence failed ({resp.status}): {detail}",
+                            code="presence_forbidden" if resp.status == 403 else "presence_failed",
+                            channel=channel,
+                            status=resp.status,
+                        )
+                    body = await resp.json()
+        except DataNetError:
+            raise
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            raise DataNetError(
+                "DataNet: presence request failed",
+                code="presence_failed",
+                channel=channel,
+            ) from exc
+
+        occupancy_value = body.get("occupancy", body.get("count", 0))
+        occupancy = occupancy_value if isinstance(occupancy_value, int) else 0
+        raw_members = body.get("members", [])
+        members = [member for member in raw_members if isinstance(member, str)] if isinstance(raw_members, list) else []
+        return {"occupancy": occupancy, "members": members}
+
+    def _jwt_project_id(self) -> str | None:
+        """Decode the unverified ``pid`` claim from the current gateway JWT."""
+        if not self._jwt:
+            return None
+        try:
+            segment = self._jwt.split(".")[1]
+            padded = segment + "=" * (-len(segment) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+            project_id = payload.get("pid")
+            return project_id if isinstance(project_id, str) and project_id else None
+        except (IndexError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
 
     def subscribe(self, channel: str, handler: Handler) -> None:
         """Register *handler* to be called when a message arrives on *channel*.
