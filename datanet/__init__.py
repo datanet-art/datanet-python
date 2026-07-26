@@ -32,4 +32,4 @@ __all__ = [
     "build_art_dmx_packet",
     "build_dmx_frame",
 ]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
