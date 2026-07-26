@@ -953,11 +953,15 @@ class DataNet:
                         code=code,
                         status=resp.status,
                     )
-                payload = await resp.json()
-                token = payload.get("token")
-                if not token:
-                    raise RuntimeError(
-                        f"DataNet auth failed: missing token in response {payload!r}"
+                body = await resp.json()
+                token = body.get("token") if isinstance(body, dict) else None
+                if not isinstance(token, str) or not token.strip():
+                    detail = body.get("error") if isinstance(body, dict) else None
+                    raise DataNetError(
+                        f"DataNet auth failed ({resp.status}): "
+                        f"{detail or 'response missing token'}",
+                        code="authentication_failed",
+                        status=resp.status,
                     )
                 logger.debug("DataNet: JWT acquired.")
                 return token

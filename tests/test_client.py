@@ -8,6 +8,7 @@ from datanet.client import (
     AnyMessage,
     BinaryMessageMeta,
     DataNet,
+    DataNetError,
     MessageMeta,
     binary_to_base64,
     build_art_dmx_packet,
@@ -61,6 +62,17 @@ class FakeClientSession:
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
         return FakePostResponse()
+
+
+class FakeMissingTokenResponse(FakePostResponse):
+    async def json(self):
+        return {"error": "invalid apiKey"}
+
+
+class FakeMissingTokenSession(FakeClientSession):
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeMissingTokenResponse()
 
 
 class FakePresenceResponse:
@@ -392,6 +404,21 @@ class DataNetClientTests(unittest.IsolatedAsyncioTestCase):
                 "deviceName": "Python Test Node",
             },
         )
+
+    async def test_auth_response_without_token_raises_structured_error(self):
+        client = DataNet("ak_invalid")
+
+        with patch.object(
+            client_module.aiohttp,
+            "ClientSession",
+            FakeMissingTokenSession,
+        ):
+            with self.assertRaises(DataNetError) as raised:
+                await client._fetch_jwt()
+
+        self.assertEqual(raised.exception.code, "authentication_failed")
+        self.assertEqual(raised.exception.status, 200)
+        self.assertIn("invalid apiKey", str(raised.exception))
 
     async def test_heartbeat_sends_hb_envelope(self):
         client = DataNet("ak_test")
